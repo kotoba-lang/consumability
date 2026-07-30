@@ -114,3 +114,42 @@
   (is (nil? (c/rung-index :not-a-rung)))
   (is (= [:addressed :reachable] (c/below :describable)))
   (is (= [] (c/below :addressed))))
+
+(deftest html-is-never-a-contract
+  ;; Measured 2026-07-30: a Cloudflare Pages actor answers EVERY path with
+  ;; 200 text/html and its SPA index. cloud-itonami-partners.pages.dev and
+  ;; cloud-itonami-isic-6492.pages.dev both returned 200 text/html for
+  ;; /openapi.json. Scoring 2xx alone reported three producers as describable,
+  ;; discoverable and agent-callable when the true answer for all three was zero.
+  (let [pages {:producer "cloud-itonami-partners"
+               :endpoint "https://cloud-itonami-partners.pages.dev"
+               :health {:path "/" :status 200 :content-type "text/html; charset=utf-8"}
+               :contract {:path "/openapi.json" :status 200 :content-type "text/html; charset=utf-8"}
+               :discovery [{:path "/llms.txt" :status 200 :content-type "text/html; charset=utf-8"}]
+               :agent {:path "/mcp" :status 200 :content-type "text/html; charset=utf-8"}}
+        a (c/assess pages)]
+    (is (= [:addressed :reachable] (:reached a))
+        "an SPA that answers everything is reachable and nothing above it")
+    (is (= :describable (:gap a)))
+    (is (false? (c/consumable? a)))
+    (testing "reachable still holds — answering IS the question that rung asks"
+      (is (true? (c/rung-verdict :reachable pages))))))
+
+(deftest a-real-json-contract-counts
+  (is (true? (c/rung-verdict :describable
+                             {:contract {:status 200 :content-type "application/json; charset=utf-8"}})))
+  (is (true? (c/rung-verdict :describable
+                             {:contract {:status 200 :content-type "application/vnd.oai.openapi+json"}}))
+      "+json vendor types count")
+  (is (true? (c/rung-verdict :discoverable
+                             {:discovery [{:status 200 :content-type "text/plain; charset=utf-8"}]}))
+      "llms.txt is text/plain"))
+
+(deftest content-type-is-only-required-when-observed
+  ;; An observer that does not collect content types must not have every rung
+  ;; silently fail — absent instrumentation is unmeasured, not refused.
+  (is (true? (c/rung-verdict :describable {:contract {:status 200}}))
+      "status-only observation still scores")
+  (is (false? (c/machine-readable? "text/html")))
+  (is (false? (c/machine-readable? nil)))
+  (is (true? (c/machine-readable? "application/json"))))

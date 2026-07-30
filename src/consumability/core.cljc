@@ -80,21 +80,48 @@
 (defn- ok-status? [status]
   (and (integer? status) (<= 200 status 299)))
 
+(def machine-readable-types
+  "Content types a consumer can parse without a browser. `text/plain` is here for
+  `llms.txt`; `text/html` is deliberately absent."
+  ["application/json" "application/yaml" "application/x-yaml" "text/yaml"
+   "application/openapi" "text/plain" "+json"])
+
+(defn machine-readable?
+  "Does this content type describe something a program can read?
+
+  This is domain truth, not transport detail, which is why it lives here. A
+  Cloudflare Pages project answers **every** path with `200 text/html` and its
+  SPA index — measured 2026-07-30 on three live actors, where
+  `/openapi.json` returned `200 text/html`. Scoring 2xx alone reported those
+  three as describable, discoverable AND agent-callable when the true answer for
+  all three rungs was zero. A rung that HTML can satisfy is a rung that measures
+  nothing."
+  [content-type]
+  (let [t (some-> content-type str/lower-case)]
+    (boolean (and t (some #(str/includes? t %) machine-readable-types)))))
+
 (defn- probe-verdict
-  "true / false / :unknown for one probe result."
-  [probe]
-  (cond
-    (nil? probe) :unknown
-    (nil? (:status probe)) :unknown
-    (ok-status? (:status probe)) true
-    :else false))
+  "true / false / :unknown for one probe result.
+
+  `:content-type` is checked only when the probe reported one — an observer that
+  does not collect it gets status-only scoring rather than a silent `false`,
+  because absent instrumentation is unmeasured, not refused."
+  ([probe] (probe-verdict probe false))
+  ([probe machine-readable-required?]
+   (cond
+     (nil? probe) :unknown
+     (nil? (:status probe)) :unknown
+     (not (ok-status? (:status probe))) false
+     (and machine-readable-required? (contains? probe :content-type))
+     (machine-readable? (:content-type probe))
+     :else true)))
 
 (defn- any-verdict
   "true if any probe answered, false if all answered and none did, :unknown when
   nothing was probed. A mix of false and :unknown is false only if at least one
   real refusal was seen — otherwise the absence is unmeasured, not proven."
   [probes]
-  (let [vs (map probe-verdict probes)]
+  (let [vs (map #(probe-verdict % true) probes)]
     (cond
       (empty? vs) :unknown
       (some true? vs) true
@@ -109,10 +136,13 @@
                  (if (contains? observation :endpoint)
                    (boolean (and (string? e) (seq (str/trim e))))
                    :unknown))
+    ;; :reachable asks only "did it answer" — a health endpoint that serves HTML
+    ;; is still reachable, and Pages answering its index is a true answer to
+    ;; that question. The rungs above it ask for something parseable.
     :reachable (probe-verdict (:health observation))
-    :describable (probe-verdict (:contract observation))
+    :describable (probe-verdict (:contract observation) true)
     :discoverable (any-verdict (:discovery observation))
-    :agent-callable (probe-verdict (:agent observation))
+    :agent-callable (probe-verdict (:agent observation) true)
     :unknown))
 
 ;; ---------- assessment ----------
