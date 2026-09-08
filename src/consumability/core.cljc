@@ -38,7 +38,7 @@
   reports an outage as a design gap. `assess` keeps them apart and `summary`
   counts them separately, which mirrors the discipline
   `cloud.itonami.app.fleet/probe-health!` already applies to health."
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 ;; ---------- the ladder ----------
 
@@ -97,7 +97,7 @@
   all three rungs was zero. A rung that HTML can satisfy is a rung that measures
   nothing."
   [content-type]
-  (let [t (some-> content-type str/lower-case)]
+  (let [t (some-> content-type str/lower)]
     (boolean (and t (some #(str/includes? t %) machine-readable-types)))))
 
 (defn- probe-verdict
