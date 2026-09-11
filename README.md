@@ -80,7 +80,7 @@ anyone can use.
 ## Test
 
 ```bash
-nbb --classpath "src:test" test/run_tests.cljk
+kbb --backend sci --classpath "src:test" test/run_tests.cljk
 ```
 
 Pure `.cljc`, no dependencies, no I/O.
