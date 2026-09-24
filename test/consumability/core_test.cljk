@@ -1,5 +1,5 @@
 (ns consumability.core-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [consumability.core :as c]))
 
 (def ^:private live-actor
